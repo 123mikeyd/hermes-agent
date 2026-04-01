@@ -212,6 +212,14 @@ PROVIDER_REGISTRY: Dict[str, ProviderConfig] = {
         api_key_env_vars=("KILOCODE_API_KEY",),
         base_url_env_var="KILOCODE_BASE_URL",
     ),
+    "perplexity": ProviderConfig(
+        id="perplexity",
+        name="Perplexity",
+        auth_type="api_key",
+        inference_base_url="https://api.perplexity.ai",
+        api_key_env_vars=("PERPLEXITY_API_KEY",),
+        base_url_env_var="PERPLEXITY_BASE_URL",
+    ),
     "huggingface": ProviderConfig(
         id="huggingface",
         name="Hugging Face",

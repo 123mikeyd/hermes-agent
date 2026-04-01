@@ -229,6 +229,12 @@ _PROVIDER_MODELS: dict[str, list[str]] = {
         "kimi-k2.5",
         "MiniMax-M2.5",
     ],
+    "perplexity": [
+        "sonar-pro",
+        "sonar",
+        "sonar-reasoning-pro",
+        "sonar-deep-research",
+    ],
     # Curated HF model list — only agentic models that map to OpenRouter defaults.
     "huggingface": [
         "Qwen/Qwen3.5-397B-A17B",
@@ -259,6 +265,7 @@ _PROVIDER_LABELS = {
     "ai-gateway": "AI Gateway",
     "kilocode": "Kilo Code",
     "alibaba": "Alibaba Cloud (DashScope)",
+    "perplexity": "Perplexity",
     "huggingface": "Hugging Face",
     "custom": "Custom endpoint",
 }
@@ -295,6 +302,8 @@ _PROVIDER_ALIASES = {
     "aliyun": "alibaba",
     "qwen": "alibaba",
     "alibaba-cloud": "alibaba",
+    "pplx": "perplexity",
+    "sonar": "perplexity",
     "hf": "huggingface",
     "hugging-face": "huggingface",
     "huggingface-hub": "huggingface",
@@ -333,7 +342,7 @@ def list_available_providers() -> list[dict[str, str]]:
         "openrouter", "nous", "openai-codex", "copilot", "copilot-acp",
         "huggingface", "zai", "kimi-coding", "minimax", "minimax-cn", "kilocode", "anthropic", "alibaba",
         "opencode-zen", "opencode-go",
-        "ai-gateway", "deepseek", "custom",
+        "ai-gateway", "deepseek", "perplexity", "custom",
     ]
     # Build reverse alias map
     aliases_for: dict[str, list[str]] = {}

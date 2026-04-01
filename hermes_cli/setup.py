@@ -87,6 +87,7 @@ _DEFAULT_PROVIDER_MODELS = {
         "Qwen/Qwen3-Coder-480B-A35B-Instruct", "deepseek-ai/DeepSeek-R1-0528",
         "deepseek-ai/DeepSeek-V3.2", "moonshotai/Kimi-K2.5",
     ],
+    "perplexity": ["sonar-pro", "sonar", "sonar-reasoning-pro", "sonar-deep-research"],
 }
 
 
@@ -897,6 +898,7 @@ def setup_model_provider(config: dict):
         "GitHub Copilot (uses GITHUB_TOKEN or gh auth token)",
         "GitHub Copilot ACP (spawns `copilot --acp --stdio`)",
         "Hugging Face Inference Providers (20+ open models)",
+        "Perplexity (Sonar models with built-in web search)",
     ]
     if keep_label:
         provider_choices.append(keep_label)
@@ -1502,7 +1504,36 @@ def setup_model_provider(config: dict):
         _set_model_provider(config, "huggingface", pconfig.inference_base_url)
         selected_base_url = pconfig.inference_base_url
 
-    # else: provider_idx == 17 (Keep current) — only shown when a provider already exists
+    elif provider_idx == 17:  # Perplexity
+        selected_provider = "perplexity"
+        print()
+        print_header("Perplexity API Key")
+        pconfig = PROVIDER_REGISTRY["perplexity"]
+        print_info(f"Provider: {pconfig.name}")
+        print_info(f"Base URL: {pconfig.inference_base_url}")
+        print_info("Get your API key at: https://console.perplexity.ai/")
+        print()
+
+        existing_key = get_env_value("PERPLEXITY_API_KEY")
+        if existing_key:
+            print_info(f"Current: {existing_key[:8]}... (configured)")
+            if prompt_yes_no("Update API key?", False):
+                api_key = prompt("  Perplexity API key", password=True)
+                if api_key:
+                    save_env_value("PERPLEXITY_API_KEY", api_key)
+                    print_success("Perplexity API key updated")
+        else:
+            api_key = prompt("  Perplexity API key", password=True)
+            if api_key:
+                save_env_value("PERPLEXITY_API_KEY", api_key)
+                print_success("Perplexity API key saved")
+            else:
+                print_warning("Skipped - agent won't work without an API key")
+
+        _set_model_provider(config, "perplexity", pconfig.inference_base_url)
+        selected_base_url = pconfig.inference_base_url
+
+    # else: provider_idx == 18 (Keep current) — only shown when a provider already exists
     # Normalize "keep current" to an explicit provider so downstream logic
     # doesn't fall back to the generic OpenRouter/static-model path.
     if selected_provider is None:

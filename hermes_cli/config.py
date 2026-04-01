@@ -638,6 +638,21 @@ OPTIONAL_ENV_VARS = {
         "password": False,
         "category": "provider",
     },
+    "PERPLEXITY_API_KEY": {
+        "description": "Perplexity API key (Sonar models with web search grounding)",
+        "prompt": "Perplexity API Key",
+        "url": "https://console.perplexity.ai/",
+        "password": True,
+        "category": "provider",
+    },
+    "PERPLEXITY_BASE_URL": {
+        "description": "Custom Perplexity API base URL (advanced)",
+        "prompt": "Perplexity Base URL (leave empty for default)",
+        "url": None,
+        "password": False,
+        "category": "provider",
+        "advanced": True,
+    },
     "DASHSCOPE_API_KEY": {
         "description": "Alibaba Cloud DashScope API key (Qwen + multi-provider models)",
         "prompt": "DashScope API Key",
@@ -1439,6 +1454,7 @@ _FALLBACK_COMMENT = """
 #   kimi-coding  (KIMI_API_KEY)        — Kimi / Moonshot
 #   minimax      (MINIMAX_API_KEY)     — MiniMax
 #   minimax-cn   (MINIMAX_CN_API_KEY)  — MiniMax (China)
+#   perplexity   (PERPLEXITY_API_KEY)  — Perplexity
 #
 # For custom OpenAI-compatible endpoints, add base_url and api_key_env.
 #
@@ -1482,6 +1498,7 @@ _COMMENTED_SECTIONS = """
 #   kimi-coding  (KIMI_API_KEY)        — Kimi / Moonshot
 #   minimax      (MINIMAX_API_KEY)     — MiniMax
 #   minimax-cn   (MINIMAX_CN_API_KEY)  — MiniMax (China)
+#   perplexity   (PERPLEXITY_API_KEY)  — Perplexity
 #
 # For custom OpenAI-compatible endpoints, add base_url and api_key_env.
 #
