@@ -1309,9 +1309,17 @@ if __name__ == "__main__":
 # ---------------------------------------------------------------------------
 from tools.registry import registry
 
+# Adapt tool description for WSL/Windows when applicable
+def _adapt_terminal_desc(desc: str) -> str:
+    try:
+        from hermes_cli.wsl_compat import adapt_terminal_description
+        return adapt_terminal_description(desc)
+    except Exception:
+        return desc
+
 TERMINAL_SCHEMA = {
     "name": "terminal",
-    "description": TERMINAL_TOOL_DESCRIPTION,
+    "description": _adapt_terminal_desc(TERMINAL_TOOL_DESCRIPTION),
     "parameters": {
         "type": "object",
         "properties": {
