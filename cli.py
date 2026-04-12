@@ -8269,6 +8269,12 @@ class HermesCLI:
 
             # --- Normal input routing ---
             text = event.app.current_buffer.text.strip()
+            # Sanitize leaked bracketed-paste markers (WSL/ConPTY)
+            try:
+                from hermes_cli.wsl_compat import sanitize_paste_input
+                text = sanitize_paste_input(text)
+            except ImportError:
+                pass
             has_images = bool(self._attached_images)
             if text or has_images:
                 # Handle /model directly on the UI thread so interactive pickers
@@ -9303,6 +9309,15 @@ class HermesCLI:
             **({'cursor': _STEADY_CURSOR} if _STEADY_CURSOR is not None else {}),
         )
         self._app = app  # Store reference for clarify_callback
+
+        # ── WSL / Windows Terminal resilience ──────────────────────────
+        # Apply all platform mitigations: Ctrl+L refresh, paste sanitize,
+        # terminal size polling, debounced resize, UTF-8 encoding defaults.
+        try:
+            from hermes_cli.wsl_compat import apply_wsl_mitigations
+            apply_wsl_mitigations(app=app, kb=kb)
+        except Exception as _e:
+            logger.debug("WSL mitigations skipped: %s", _e)
 
         # ── Fix ghost status-bar lines on terminal resize ──────────────
         # When the terminal shrinks (e.g. un-maximize), the emulator reflows
