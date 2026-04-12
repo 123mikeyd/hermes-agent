@@ -6964,11 +6964,12 @@ class HermesCLI:
         self._app = app  # Store reference for clarify_callback
 
         # ── WSL / Windows Terminal resilience ──────────────────────────
-        # Apply all platform mitigations: Ctrl+L refresh, paste sanitize,
-        # terminal size polling, debounced resize, UTF-8 encoding defaults.
+        # Apply safe platform mitigations: Ctrl+L refresh, paste sanitize,
+        # response buffering, UTF-8 encoding, WSL-aware tool descriptions.
+        # No background threads. No monkey-patching. No private API access.
         try:
             from hermes_cli.wsl_compat import apply_wsl_mitigations
-            apply_wsl_mitigations(app=app, kb=kb)
+            apply_wsl_mitigations(kb=kb)
         except Exception as _e:
             logger.debug("WSL mitigations skipped: %s", _e)
 

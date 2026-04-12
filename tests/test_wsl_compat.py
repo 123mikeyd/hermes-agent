@@ -3,15 +3,12 @@
 import os
 import tempfile
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from hermes_cli.wsl_compat import (
     adapt_terminal_description,
     buffer_response_text,
-    ensure_utf8_env,
     get_last_response,
-    is_windows_env,
-    make_debounced_resize_handler,
     sanitize_paste_input,
     safe_open,
     _response_buffer,
@@ -52,7 +49,7 @@ class TestSanitizePasteInput(unittest.TestCase):
 
 
 class TestAdaptTerminalDescription(unittest.TestCase):
-    """Fix 7: WSL-aware tool descriptions."""
+    """Fix 5: WSL-aware tool descriptions."""
 
     def test_non_wsl_unchanged(self):
         desc = "Execute shell commands on a Linux environment."
@@ -68,6 +65,19 @@ class TestAdaptTerminalDescription(unittest.TestCase):
             self.assertIn("/mnt/c/", result)
             self.assertNotIn("Linux environment", result)
 
+    def test_wsl_replaces_cloud_sandbox(self):
+        desc = (
+            "cloud sandboxes may be cleaned up, idled out, or recreated "
+            "between turns. Persistent filesystem means files can resume "
+            "later; it does NOT guarantee a continuously running machine "
+            "or surviving background processes. Use terminal sandboxes "
+            "for task work, not durable hosting."
+        )
+        with patch("hermes_cli.wsl_compat.is_wsl", return_value=True):
+            result = adapt_terminal_description(desc)
+            self.assertIn("local WSL environment", result)
+            self.assertNotIn("cloud sandbox", result)
+
     def test_windows_native(self):
         desc = "Execute shell commands on a Linux environment."
         with patch("hermes_cli.wsl_compat.is_wsl", return_value=False), \
@@ -77,7 +87,7 @@ class TestAdaptTerminalDescription(unittest.TestCase):
 
 
 class TestResponseBuffer(unittest.TestCase):
-    """Fix 4: Response text preservation."""
+    """Fix 2: Response text preservation."""
 
     def setUp(self):
         _response_buffer.clear()
@@ -102,7 +112,7 @@ class TestResponseBuffer(unittest.TestCase):
 
 
 class TestSafeOpen(unittest.TestCase):
-    """Fix 6: UTF-8 encoding defaults."""
+    """Fix 4: UTF-8 encoding defaults."""
 
     def test_text_mode_gets_utf8(self):
         with tempfile.NamedTemporaryFile(
@@ -139,27 +149,8 @@ class TestSafeOpen(unittest.TestCase):
             os.unlink(path)
 
 
-class TestDebouncedResize(unittest.TestCase):
-    """Fix 3: Resize debounce."""
-
-    def test_non_wsl_returns_original(self):
-        app = MagicMock()
-        original = app._on_resize
-        with patch("hermes_cli.wsl_compat.is_wsl", return_value=False):
-            result = make_debounced_resize_handler(app)
-        self.assertIs(result, original)
-
-    def test_wsl_returns_wrapper(self):
-        app = MagicMock()
-        original = app._on_resize
-        with patch("hermes_cli.wsl_compat.is_wsl", return_value=True):
-            result = make_debounced_resize_handler(app)
-        self.assertIsNot(result, original)
-        self.assertTrue(callable(result))
-
-
 class TestRefreshKeybinding(unittest.TestCase):
-    """Fix 5: Ctrl+L hard refresh."""
+    """Fix 3: Ctrl+L hard refresh."""
 
     def test_ctrl_l_registered(self):
         from prompt_toolkit.key_binding import KeyBindings
