@@ -5567,6 +5567,14 @@ class HermesCLI:
             # Get the final response
             response = result.get("final_response", "") if result else ""
 
+            # Fix 4: Buffer the response so it survives terminal resize on WSL
+            if response:
+                try:
+                    from hermes_cli.wsl_compat import buffer_response_text
+                    buffer_response_text(response)
+                except ImportError:
+                    pass
+
             # Auto-generate session title after first exchange (non-blocking)
             if response and result and not result.get("failed") and not result.get("partial"):
                 try:

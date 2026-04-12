@@ -26,17 +26,25 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from prompt_toolkit.application import Application
     from prompt_toolkit.key_binding import KeyBindings
-    from prompt_toolkit.widgets import TextArea
 
 logger = logging.getLogger(__name__)
 
 # ─── Detection ──────────────────────────────────────────────────────────────
+# Re-use hermes_constants.is_wsl() if available (upstream has it);
+# fall back to our own implementation for older codebases.
+
+try:
+    from hermes_constants import is_wsl as _upstream_is_wsl
+except ImportError:
+    _upstream_is_wsl = None
 
 _is_wsl: bool | None = None
 
 
 def is_wsl() -> bool:
     """Cached WSL detection via /proc/version Microsoft marker."""
+    if _upstream_is_wsl is not None:
+        return _upstream_is_wsl()
     global _is_wsl
     if _is_wsl is not None:
         return _is_wsl
@@ -93,10 +101,10 @@ def start_terminal_size_polling(
 
     WSL's ConPTY layer sometimes drops the SIGWINCH signal when the
     terminal window is resized.  This thread polls ``shutil.get_terminal_size()``
-    at ``interval`` seconds and calls ``app.invalidate()`` when a change
-    is detected.
+    at *interval* seconds and triggers the app's resize handler when a
+    change is detected.
 
-    Only starts on WSL.  No-op on other platforms.
+    Only activates on WSL.  No-op on other platforms.
     """
     if not is_wsl():
         return
@@ -118,8 +126,13 @@ def start_terminal_size_polling(
                 cols, rows = shutil.get_terminal_size()
                 if cols != last_cols or rows != last_rows:
                     last_cols, last_rows = cols, rows
+                    # Trigger the app's own resize path (not just invalidate)
+                    # so prompt_toolkit recalculates layout dimensions.
                     if app.is_running:
-                        app.invalidate()
+                        try:
+                            app._on_resize()
+                        except Exception:
+                            app.invalidate()
             except Exception:
                 pass
 
@@ -137,62 +150,73 @@ def stop_terminal_size_polling() -> None:
     _size_poll_stop.set()
 
 
-# ─── Fix 3 & 4: Resize Debounce + Response Preservation ────────────────────
+# ─── Fix 3: Resize Debounce ────────────────────────────────────────────────
 
 _resize_timer: threading.Timer | None = None
 _resize_lock = threading.Lock()
 
+
+def make_debounced_resize_handler(app: "Application", delay: float = 0.15):
+    """Wrap the app's ``_on_resize`` with a debounce timer.
+
+    Instead of immediately redrawing on every resize signal (which causes
+    duplicated status bars and cleared text on WSL), we cancel the previous
+    pending redraw and wait *delay* seconds for the resize to settle.
+
+    Returns the wrapper function that should replace ``app._on_resize``.
+    Falls through to immediate call on non-WSL platforms.
+    """
+    original_on_resize = app._on_resize
+
+    if not is_wsl():
+        return original_on_resize  # no wrapping needed
+
+    def _debounced():
+        global _resize_timer
+        with _resize_lock:
+            if _resize_timer is not None:
+                _resize_timer.cancel()
+
+            def _do_resize():
+                try:
+                    original_on_resize()
+                except Exception:
+                    pass
+
+            _resize_timer = threading.Timer(delay, _do_resize)
+            _resize_timer.daemon = True
+            _resize_timer.start()
+
+    return _debounced
+
+
+# ─── Fix 4: Response Text Preservation ──────────────────────────────────────
+
 _response_buffer: list[str] = []
+_buffer_lock = threading.Lock()
 
 
 def buffer_response_text(text: str) -> None:
-    """Store a completed response so it survives a terminal resize."""
-    _response_buffer.append(text)
-    while len(_response_buffer) > 5:
-        _response_buffer.pop(0)
+    """Store a completed response so it can be recovered after resize.
 
-
-def get_buffered_responses() -> list[str]:
-    """Return buffered response texts (most recent last)."""
-    return list(_response_buffer)
-
-
-def debounced_resize(app: "Application", delay: float = 0.15) -> None:
-    """Debounce terminal resize events.
-
-    Instead of immediately redrawing on every resize signal (which causes
-    duplicated status bars and cleared text on WSL), wait ``delay``
-    seconds for the resize to settle before invalidating.
-
-    Falls through to immediate invalidate on non-WSL platforms.
+    The CLI should call this after every completed agent response.
     """
-    if not is_wsl():
-        app.invalidate()
-        return
+    with _buffer_lock:
+        _response_buffer.append(text)
+        # Keep only the last 5 responses to limit memory
+        while len(_response_buffer) > 5:
+            _response_buffer.pop(0)
 
-    global _resize_timer
-    with _resize_lock:
-        if _resize_timer is not None:
-            _resize_timer.cancel()
 
-        def _do_resize():
-            try:
-                if app.is_running:
-                    app.invalidate()
-            except Exception:
-                pass
-
-        _resize_timer = threading.Timer(delay, _do_resize)
-        _resize_timer.daemon = True
-        _resize_timer.start()
+def get_last_response() -> str | None:
+    """Return the most recent buffered response, or None."""
+    with _buffer_lock:
+        return _response_buffer[-1] if _response_buffer else None
 
 
 # ─── Fix 5: Ctrl+L Hard Refresh ────────────────────────────────────────────
 
-def register_refresh_keybinding(
-    kb: "KeyBindings",
-    app_ref: "Application | None" = None,
-) -> None:
+def register_refresh_keybinding(kb: "KeyBindings") -> None:
     """Register Ctrl+L to force a full screen clear and redraw.
 
     This is the universal escape hatch when the display is corrupted.
@@ -203,8 +227,8 @@ def register_refresh_keybinding(
         """Force clear screen and full redraw."""
         output = event.app.renderer.output
         try:
-            output.write_raw("\x1b[2J")  # Clear screen
-            output.write_raw("\x1b[H")   # Cursor to home
+            output.write_raw("\x1b[2J")   # Clear entire screen
+            output.write_raw("\x1b[H")    # Cursor to home position
             output.flush()
         except Exception:
             pass
@@ -225,11 +249,22 @@ def safe_open(path, mode="r", **kwargs):
     characters (emoji, non-Latin text).
 
     This wrapper ensures UTF-8 for text mode opens.  Binary mode is
-    unaffected.
+    unaffected.  If the caller already specifies an encoding, it is not
+    overridden.
     """
     if "b" not in mode and "encoding" not in kwargs:
         kwargs["encoding"] = "utf-8"
     return open(path, mode, **kwargs)
+
+
+def ensure_utf8_env() -> None:
+    """Set PYTHONIOENCODING=utf-8 if not already set.
+
+    Only meaningful on native Windows where the default encoding may be
+    a legacy codepage.  On WSL the system is already UTF-8.
+    """
+    if is_windows_native() and not os.environ.get("PYTHONIOENCODING"):
+        os.environ["PYTHONIOENCODING"] = "utf-8"
 
 
 # ─── Fix 7: WSL-Aware Tool Description ─────────────────────────────────────
@@ -237,9 +272,9 @@ def safe_open(path, mode="r", **kwargs):
 def adapt_terminal_description(description: str) -> str:
     """Adjust the terminal tool description for the current platform.
 
-    The default description tells the LLM it's running on a 'Linux
-    environment' with 'cloud sandboxes' — misleading when the user is
-    on WSL or native Windows.  This produces better tool use decisions.
+    The default description tells the LLM it's running on a "Linux
+    environment" with "cloud sandboxes" — misleading when the user is
+    on WSL or native Windows.
     """
     if is_wsl():
         description = description.replace(
@@ -274,20 +309,13 @@ def apply_wsl_mitigations(
     """Apply all WSL/Windows Terminal mitigations.
 
     Call once at CLI startup after the prompt_toolkit Application is created.
-
-    Parameters
-    ----------
-    app : Application, optional
-        The prompt_toolkit Application instance.  Required for size polling.
-    kb : KeyBindings, optional
-        The active keybinding registry.  Required for Ctrl+L refresh.
     """
     platform = "WSL" if is_wsl() else "Windows" if is_windows_native() else "other"
     logger.debug("WSL mitigations: platform=%s", platform)
 
-    # Fix 5: Ctrl+L refresh (all platforms — universally useful)
+    # Fix 5: Ctrl+L refresh — all platforms, universally useful
     if kb is not None:
-        register_refresh_keybinding(kb, app)
+        register_refresh_keybinding(kb)
 
     if not is_windows_env():
         logger.debug("Non-Windows platform, skipping WSL-specific fixes")
@@ -297,12 +325,15 @@ def apply_wsl_mitigations(
     if app is not None and is_wsl():
         start_terminal_size_polling(app, interval=0.5)
 
-    # Fix 6: Ensure UTF-8 default for file I/O on Windows
-    if sys.platform == "win32" and not os.environ.get("PYTHONIOENCODING"):
-        os.environ["PYTHONIOENCODING"] = "utf-8"
+    # Fix 3: Debounced resize (WSL only) — wrap the app's resize handler
+    if app is not None and is_wsl():
+        app._on_resize = make_debounced_resize_handler(app, delay=0.15)
+
+    # Fix 6: UTF-8 encoding for native Windows
+    ensure_utf8_env()
 
     logger.info(
-        "WSL/Windows Terminal mitigations applied: paste-sanitize, "
-        "size-poll, resize-debounce, Ctrl+L refresh, UTF-8 encoding, "
-        "WSL-aware tool descriptions"
+        "WSL/Windows Terminal mitigations active (%s): paste-sanitize, "
+        "size-poll, resize-debounce, Ctrl+L, UTF-8, WSL-aware descriptions",
+        platform,
     )
