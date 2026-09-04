@@ -354,6 +354,7 @@ const sidebars: SidebarsConfig = {
                     'user-guide/skills/optional/creative/creative-audiocraft-audio-generation',
                     'user-guide/skills/optional/creative/creative-baoyu-article-illustrator',
                     'user-guide/skills/optional/creative/creative-baoyu-comic',
+                    'user-guide/skills/optional/creative/creative-blender-music-video-production',
                     'user-guide/skills/optional/creative/creative-comfyui',
                     'user-guide/skills/optional/creative/creative-concept-diagrams',
                     'user-guide/skills/optional/creative/creative-creative-ideation',
